@@ -1,0 +1,220 @@
+System Design Document (SDD)
+RAG Query System
+1. Overview
+The RAG Query System is a web-based application that leverages Retrieval-Augmented Generation (RAG) to answer user queries based on a predefined set of documents (PDFs). It combines a retrieval mechanism using vector embeddings with a large language model (LLM) to provide natural language responses. The system consists of a FastAPI backend for retrieval and generation, a React frontend for user interaction, and external dependencies for embeddings and LLM inference.
+Purpose
+Enable users to query a curated document corpus (e.g., BlackBerry-related PDFs) and receive synthesized, document-grounded answers.
+Provide transparency by returning the source document chunks alongside answers.
+Scope
+Local deployment for development and testing.
+Cloud deployment for scalable, public access.
+Limited to document-based answers (current design), with potential for LLM fallback.
+2. System Architecture
+2.1 High-Level Architecture
+[User] --> [React Frontend] --> [FastAPI Backend] --> [FAISS Index + Chunks] --> [OpenRouter LLM]
+   |               |                   |                    |                      |
+ Browser     HTTP Requests      Retrieval Logic       Document Data         Answer Generation
+Frontend: React-based UI (App.js) for query input and response display.
+Backend: FastAPI server (main.py) handling retrieval and LLM integration.
+Data Store: Precomputed FAISS index (faiss_index.bin) and JSON chunks (chunks.json) from PDFs.
+External Service: OpenRouter API for LLM inference.
+2.2 Components
+React Frontend:
+Purpose: User interface for submitting queries and viewing answers/sources.
+Tech: React, JavaScript, Fetch API.
+Location: blackberryrag-ui/App.js.
+FastAPI Backend:
+Purpose: API server for query processing, retrieval, and LLM calls.
+Tech: FastAPI, Python, Uvicorn.
+Endpoints:
+GET /: Welcome message.
+POST /query: Process query and return answer/sources.
+Location: BlackberryRAG/main.py.
+Retrieval Layer:
+Purpose: Embed queries and retrieve relevant document chunks.
+Tech: SentenceTransformers (all-MiniLM-L6-v2), FAISS.
+Data: faiss_index.bin (embeddings), chunks.json (text chunks).
+Generation Layer:
+Purpose: Synthesize answers from retrieved chunks.
+Tech: OpenRouter API (openai/gpt-4).
+Dependency: Valid API key.
+Document Corpus:
+Purpose: Source data for answers (e.g., BlackBerry PDFs).
+Format: Preprocessed into chunks.json and faiss_index.bin.
+2.3 Data Flow
+User enters a query (e.g., "What is Blackberry?") in the React UI.
+Frontend sends a POST /query request with {"query": "What is Blackberry?"}.
+Backend embeds the query using SentenceTransformers.
+FAISS retrieves the top 3 relevant chunks from chunks.json.
+Backend constructs a prompt with the query and chunks, sends it to OpenRouter.
+OpenRouter returns an answer, which the backend augments with source chunks.
+Backend responds with {"answer": "...", "sources": [...]}.
+Frontend displays the answer and sources.
+3. Design Details
+3.1 Backend
+Framework: FastAPI for async HTTP handling.
+Dependencies: 
+sentence-transformers: Query embedding.
+faiss-cpu: Vector search.
+requests: LLM API calls.
+pydantic: Input validation (optional, not currently used).
+CORS: Enabled for cross-origin requests from the frontend.
+3.2 Frontend
+Framework: React with Create React App.
+State: Manages query, response, and sources.
+HTTP: Uses fetch for API communication.
+3.3 Retrieval
+Embedding Model: all-MiniLM-L6-v2 (lightweight, 384-dimensional vectors).
+Search: FAISS exact search, k=3 nearest neighbors.
+Data: Static files (faiss_index.bin, chunks.json).
+3.4 Generation
+LLM: OpenRouter’s openai/gpt-4 (configurable).
+Prompt: "Answer this query based on the documents: {query}\nDocuments:\n{chunks}".
+3.5 Storage
+Static: File-based (faiss_index.bin, chunks.json).
+Future Consideration: Database (e.g., PostgreSQL with pgvector) for dynamic updates.
+4. How to Run the Application Locally
+4.1 Prerequisites
+Python 3.8+: For backend.
+Node.js 18+: For frontend.
+Dependencies: 
+Backend: pip install fastapi uvicorn sentence-transformers faiss-cpu numpy requests.
+Frontend: npm install in blackberryrag-ui/.
+Files: faiss_index.bin, chunks.json (prebuilt from PDFs).
+OpenRouter API Key: Replace "1" in main.py with a valid key.
+4.2 Steps
+Backend:
+Navigate to /Users/Wing/Documents/BlackberryRAG/.
+Run:
+bash
+uvicorn main:app --host localhost --port 8000 --reload
+Verify: curl http://localhost:8000/ returns {"message": "..."}.
+Frontend:
+Navigate to /Users/Wing/Documents/BlackberryRAG/blackberryrag-ui/.
+Install dependencies:
+bash
+npm install
+Start:
+bash
+npm start
+Open http://localhost:3000 (or next available port if 3000 is busy).
+Test:
+Use the UI to submit a query (e.g., "What is Blackberry?").
+Or via curl:
+bash
+curl -X POST "http://localhost:8000/query" -H "Content-Type: application/json" -d '{"query": "What is Blackberry?"}'
+4.3 Troubleshooting
+Port Conflicts: Kill processes (kill -9 <pid> after ps aux | grep uvicorn or node).
+Missing Files: Ensure faiss_index.bin and chunks.json exist.
+API Key: Invalid key returns {"error": "..."}.
+5. Steps to Deploy the Application to the Cloud
+5.1 Deployment Target
+Platform: AWS ECS (Elastic Container Service) with Fargate (serverless).
+Why: Scalable, manages containers, integrates with storage and networking.
+5.2 Prerequisites
+AWS Account: With IAM permissions for ECS, ECR, and S3.
+Docker: Installed locally.
+AWS CLI: Configured with credentials (aws configure).
+5.3 Steps
+Containerize the Backend:
+Create Dockerfile in BlackberryRAG/:
+dockerfile
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+Create requirements.txt:
+fastapi
+uvicorn
+sentence-transformers
+faiss-cpu
+numpy
+requests
+Build and test locally:
+bash
+docker build -t rag-backend .
+docker run -p 8000:8000 -v $(pwd):/app rag-backend
+Push to ECR:
+Create an ECR repository:
+bash
+aws ecr create-repository --repository-name rag-backend
+Authenticate Docker:
+bash
+aws ecr get-login-password | docker login --username AWS --password-stdin <aws-account-id>.dkr.ecr.<region>.amazonaws.com
+Tag and push:
+bash
+docker tag rag-backend:latest <aws-account-id>.dkr.ecr.<region>.amazonaws.com/rag-backend:latest
+docker push <aws-account-id>.dkr.ecr.<region>.amazonaws.com/rag-backend:latest
+Deploy Backend to ECS:
+Create a task definition (task-definition.json):
+json
+{
+  "family": "rag-backend",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "rag-backend",
+      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/rag-backend:latest",
+      "portMappings": [{ "containerPort": 8000, "hostPort": 8000 }],
+      "memory": "512",
+      "cpu": "256"
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "memory": "512",
+  "cpu": "256"
+}
+Register:
+bash
+aws ecs register-task-definition --cli-input-json file://task-definition.json
+Create a cluster:
+bash
+aws ecs create-cluster --cluster-name rag-cluster
+Run service:
+bash
+aws ecs create-service --cluster rag-cluster --service-name rag-service --task-definition rag-backend:1 --desired-count 1 --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[<subnet-id>],securityGroups=[<sg-id>],assignPublicIp=ENABLED}"
+Store Data in S3:
+Upload faiss_index.bin and chunks.json to an S3 bucket:
+bash
+aws s3 cp faiss_index.bin s3://rag-data-bucket/
+aws s3 cp chunks.json s3://rag-data-bucket/
+Update main.py to download from S3:
+python
+import boto3
+s3 = boto3.client('s3')
+s3.download_file('rag-data-bucket', 'faiss_index.bin', '/tmp/faiss_index.bin')
+s3.download_file('rag-data-bucket', 'chunks.json', '/tmp/chunks.json')
+index = faiss.read_index('/tmp/faiss_index.bin')
+with open('/tmp/chunks.json', 'r') as f:
+    chunks = json.load(f)
+Containerize and Deploy Frontend:
+Create Dockerfile in blackberryrag-ui/:
+dockerfile
+FROM node:18
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+FROM nginx:alpine
+COPY --from=0 /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+Build and push to ECR (similar to backend).
+Deploy to ECS or use S3 static hosting:
+bash
+aws s3 sync build/ s3://rag-frontend-bucket/
+Configure Networking:
+Use an Application Load Balancer (ALB) for the backend.
+Set frontend to call ALB URL (e.g., http://rag-backend-alb.us-east-1.elb.amazonaws.com/query).
+Test:
+Access frontend via S3 URL or ALB, submit a query, verify response.
+5.4 Notes
+Security: Add IAM roles, secure API key in AWS Secrets Manager.
+Scaling: Adjust ECS desired count, use auto-scaling.
+Cost: Fargate is pay-per-use; optimize with reserved instances if needed.
+6. Assumptions and Constraints
+Assumptions: PDFs are preprocessed into chunks.json and faiss_index.bin.
+Constraints: Limited to static documents; OpenRouter dependency adds latency/cost.
