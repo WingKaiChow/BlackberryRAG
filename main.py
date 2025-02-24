@@ -6,6 +6,7 @@ import numpy as np
 import json
 import requests
 from pydantic import BaseModel  # Add this import
+import config
 
 app = FastAPI()
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -39,7 +40,7 @@ async def query_documents(query: Query):
     prompt = f"Answer this query based on the documents: {query.query}\nDocuments:\n" + "\n".join(relevant_chunks)
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+        headers={"Authorization": f"Bearer {config.LLM_API_KEY}"},
         json={"model": "google/gemini-flash-1.5-8b", "messages": [{"role": "user", "content": prompt}]}
     ).json()
     if "choices" in response:
