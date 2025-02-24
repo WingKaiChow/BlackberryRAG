@@ -15,7 +15,7 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 index = faiss.read_index("faiss_index.bin")
 with open("chunks.json", "r") as f:
     chunks = json.load(f)
-OPENROUTER_API_KEY = "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"  # Replace with your key
+OPENROUTER_API_KEY = "1"  # Replace with your key
 
 # Add CORS middleware
 app.add_middleware(
