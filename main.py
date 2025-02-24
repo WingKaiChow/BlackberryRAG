@@ -7,9 +7,6 @@ import json
 import requests
 from pydantic import BaseModel  # Add this import
 
-#google/gemini-flash-1.5-8b
-#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
-
 app = FastAPI()
 model = SentenceTransformer('all-MiniLM-L6-v2')
 index = faiss.read_index("faiss_index.bin")
